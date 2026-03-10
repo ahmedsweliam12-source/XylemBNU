@@ -393,7 +393,7 @@
       const [search, setSearch] = useState("");
       const [statusFilters, setStatusFilters] = useState(new Set(["assigned","unassigned"]));
       const [detailPatient, setDetailPatient] = useState(null);
-      const [sheetInput, setSheetInput] = useState("");
+      const [sheetInput, setSheetInput] = useState("https://docs.google.com/spreadsheets/d/e/2PACX-1vRhXrMrJnkMNTI0YRL-H2JKfF6nY0btinpd18qXEsGNmcI6CECY_f8IcthDB7-Ci5ukTkHZ5TvjfijF/pub?gid=939469878&single=true&output=csv");
       const [sheetConnected, setSheetConnected] = useState(false);
       const [bannerVisible, setBannerVisible] = useState(true);
       const [syncTime, setSyncTime] = useState(null);
@@ -420,7 +420,7 @@
         if (syncRef.current) clearInterval(syncRef.current);
         syncRef.current = setInterval(() => fetchSheet(sheetInput.trim()), 30000);
       };
-      // No auto-connect on mount — paste your published CSV URL above and click Connect
+      useEffect(() => { connectSheet(); }, []);
 
       const handleAssign = useCallback((id) => setAssignTarget(id), []);
       const confirmAssign = useCallback((studentName) => {
