@@ -92,6 +92,14 @@
     };
     const ALL_DEPTS = ["All","Operative","Endodontics","Periodontics","Oral Surgery","Pedodontics","Fixed Prosthodontics","Removable Prosthodontics"];
 
+    /* ── FIREBASE CONFIG ────────────────────────────────────────────────────── */
+    // 1. Go to https://console.firebase.google.com → Create project
+    // 2. Build → Realtime Database → Create database (start in test mode)
+    // 3. Copy your database URL (e.g. https://your-project-default-rtdb.firebaseio.com)
+    // 4. Paste it below, replacing the placeholder
+    const FIREBASE_URL = "https://xylem-syestem-default-rtdb.europe-west1.firebasedatabase.app";
+    const FB_READY = FIREBASE_URL && !FIREBASE_URL.includes("YOUR_FIREBASE");
+
     /* ── HELPERS ────────────────────────────────────────────────────────────── */
     function parseCSV(text) {
       return text.trim().split("\n").map(row => {
@@ -401,15 +409,48 @@
       const [assignTarget, setAssignTarget] = useState(null);
       const [unassignTarget, setUnassignTarget] = useState(null);
       const syncRef = useRef(null);
+      const fbRef = useRef(null);
+      const assignmentsRef = useRef({});
 
+      /* ── FIREBASE: write one assignment ─────────────────────────────────── */
+      const pushAssignment = async (id, data) => {
+        if (!FB_READY) return;
+        try {
+          await fetch(`${FIREBASE_URL}/assignments/${id}.json`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+          });
+        } catch(e) { console.error("Firebase write error:", e); }
+      };
+
+      /* ── FIREBASE: read all assignments and merge into patients ─────────── */
+      const fetchAssignments = useCallback(async () => {
+        if (!FB_READY) return;
+        try {
+          const res = await fetch(`${FIREBASE_URL}/assignments.json?t=` + Date.now());
+          const data = await res.json();
+          if (data && typeof data === "object") {
+            assignmentsRef.current = data;
+            setPatients(prev => prev.map(p => data[p.id] ? { ...p, ...data[p.id] } : p));
+            setDetailPatient(prev => prev && data[prev.id] ? { ...prev, ...data[prev.id] } : prev);
+          }
+        } catch(e) { console.error("Firebase read error:", e); }
+      }, []);
+
+      /* ── SHEET: fetch and merge with stored Firebase assignments ─────────── */
       const fetchSheet = useCallback(async (url) => {
         try {
           setSyncing(true); setSyncError(false);
           const res = await fetch(url + (url.includes("?") ? "&t=" : "?t=") + Date.now());
           const text = await res.text();
           const rows = parseCSV(text);
-          if (rows.length > 1) { setPatients(csvToPatients(rows)); setSyncTime(new Date()); setSheetConnected(true); }
-          else { setSyncError(true); }
+          if (rows.length > 1) {
+            const fresh = csvToPatients(rows);
+            const merged = fresh.map(p => assignmentsRef.current[p.id] ? { ...p, ...assignmentsRef.current[p.id] } : p);
+            setPatients(merged);
+            setSyncTime(new Date()); setSheetConnected(true);
+          } else { setSyncError(true); }
         } catch(e) { console.error(e); setSyncError(true); } finally { setSyncing(false); }
       }, []);
 
@@ -419,19 +460,34 @@
         if (syncRef.current) clearInterval(syncRef.current);
         syncRef.current = setInterval(() => fetchSheet(sheetInput.trim()), 30000);
       };
-      useEffect(() => { connectSheet(); }, []);
+
+      /* ── on mount: connect sheet + start Firebase polling ───────────────── */
+      useEffect(() => {
+        connectSheet();
+        if (FB_READY) {
+          fetchAssignments();
+          fbRef.current = setInterval(fetchAssignments, 5000);
+        }
+        return () => { clearInterval(syncRef.current); clearInterval(fbRef.current); };
+      }, []);
 
       const handleAssign = useCallback((id) => setAssignTarget(id), []);
       const confirmAssign = useCallback((studentName) => {
-        setPatients(prev => prev.map(p => p.id === assignTarget ? {...p, status:"assigned", assignedTo:studentName} : p));
-        setDetailPatient(prev => prev?.id === assignTarget ? {...prev, status:"assigned", assignedTo:studentName} : prev);
+        const data = { status: "assigned", assignedTo: studentName };
+        assignmentsRef.current[assignTarget] = data;
+        setPatients(prev => prev.map(p => p.id === assignTarget ? { ...p, ...data } : p));
+        setDetailPatient(prev => prev?.id === assignTarget ? { ...prev, ...data } : prev);
+        pushAssignment(assignTarget, data);
         setAssignTarget(null);
       }, [assignTarget]);
 
       const handleUnassign = useCallback((id) => setUnassignTarget(id), []);
       const confirmUnassign = useCallback(() => {
-        setPatients(prev => prev.map(p => p.id === unassignTarget ? {...p, status:"unassigned", assignedTo:""} : p));
-        setDetailPatient(prev => prev?.id === unassignTarget ? {...prev, status:"unassigned", assignedTo:""} : prev);
+        const data = { status: "unassigned", assignedTo: "" };
+        assignmentsRef.current[unassignTarget] = data;
+        setPatients(prev => prev.map(p => p.id === unassignTarget ? { ...p, ...data } : p));
+        setDetailPatient(prev => prev?.id === unassignTarget ? { ...prev, ...data } : prev);
+        pushAssignment(unassignTarget, data);
         setUnassignTarget(null);
       }, [unassignTarget]);
 
