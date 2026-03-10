@@ -56,7 +56,7 @@
       { id:"PT-003", firstName:"Omar",   lastName:"Hassan",    age:"45", phone:"+20 112 456 7890",
         complaint:"Missing upper front teeth for 6 months, difficulty eating and significant speech impediment.",
         diagnosis:"Partial edentulism #11, #12, #21. Fixed partial denture with implant support recommended.",
-        department:"Prosthodontics", status:"unassigned", assignedTo:"",
+        department:"Fixed Prosthodontics", status:"unassigned", assignedTo:"",
         images:["https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Periapical_radiograph.jpg/320px-Periapical_radiograph.jpg"] },
       { id:"PT-004", firstName:"Nour",   lastName:"Ibrahim",   age:"8",  phone:"+20 100 567 8901",
         complaint:"Cavity in lower left primary molar, mild pain with sweets and cold beverages.",
@@ -83,15 +83,14 @@
 
     const DEPT_META = {
       "Operative":                { color:"#0e9ab5", light:"rgba(43,188,212,0.08)",  border:"rgba(43,188,212,0.2)",  icon:"🦷" },
-      "Endodontics":              { color:"#e05c2a", light:"rgba(224,92,42,0.07)",   border:"rgba(224,92,42,0.2)",   icon:"🔬" },
-      "Periodontics":             { color:"#3a6fd8", light:"rgba(58,111,216,0.07)",  border:"rgba(58,111,216,0.2)",  icon:"🩺" },
-      "Oral Surgery":             { color:"#c43085", light:"rgba(196,48,133,0.07)",  border:"rgba(196,48,133,0.2)",  icon:"⚕️" },
-      "Prosthodontics":           { color:"#7040c8", light:"rgba(112,64,200,0.07)",  border:"rgba(112,64,200,0.2)",  icon:"🏥" },
-      "Pedodontics":              { color:"#b07a00", light:"rgba(176,122,0,0.07)",   border:"rgba(176,122,0,0.2)",   icon:"👶" },
-      "Fixed Prosthodontics":     { color:"#7040c8", light:"rgba(112,64,200,0.07)",  border:"rgba(112,64,200,0.2)",  icon:"🦾" },
-      "Removable Prosthodontics": { color:"#1a8fa8", light:"rgba(26,143,168,0.07)",  border:"rgba(26,143,168,0.2)",  icon:"🔧" },
+      "Endodontics":              { color:"#e05c2a", light:"rgba(224,92,42,0.07)",   border:"rgba(224,92,42,0.2)",   icon:"🔩" },
+      "Periodontics":             { color:"#3a6fd8", light:"rgba(58,111,216,0.07)",  border:"rgba(58,111,216,0.2)",  icon:"🩸" },
+      "Oral Surgery":             { color:"#c43085", light:"rgba(196,48,133,0.07)",  border:"rgba(196,48,133,0.2)",  icon:"✂️" },
+      "Pedodontics":              { color:"#b07a00", light:"rgba(176,122,0,0.07)",   border:"rgba(176,122,0,0.2)",   icon:"🧸" },
+      "Fixed Prosthodontics":     { color:"#7040c8", light:"rgba(112,64,200,0.07)",  border:"rgba(112,64,200,0.2)",  icon:"👑" },
+      "Removable Prosthodontics": { color:"#1a8fa8", light:"rgba(26,143,168,0.07)",  border:"rgba(26,143,168,0.2)",  icon:"🔄" },
     };
-    const ALL_DEPTS = ["All","Operative","Endodontics","Periodontics","Oral Surgery","Prosthodontics","Pedodontics","Fixed Prosthodontics","Removable Prosthodontics"];
+    const ALL_DEPTS = ["All","Operative","Endodontics","Periodontics","Oral Surgery","Pedodontics","Fixed Prosthodontics","Removable Prosthodontics"];
 
     /* ── HELPERS ────────────────────────────────────────────────────────────── */
     function parseCSV(text) {
