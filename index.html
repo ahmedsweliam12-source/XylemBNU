@@ -507,7 +507,7 @@
       const [patients, setPatients] = useState(DEMO);
       const [dept, setDept] = useState("All");
       const [search, setSearch] = useState("");
-      const [statusFilters, setStatusFilters] = useState(new Set(["assigned","unassigned"]));
+      const [statusFilter, setStatusFilter] = useState("all"); // "all" | "assigned" | "unassigned"
       const [detailPatient, setDetailPatient] = useState(null);
       const [sheetInput, setSheetInput] = useState("https://docs.google.com/spreadsheets/d/e/2PACX-1vRhXrMrJnkMNTI0YRL-H2JKfF6nY0btinpd18qXEsGNmcI6CECY_f8IcthDB7-Ci5ukTkHZ5TvjfijF/pub?gid=939469878&single=true&output=csv");
       const [sheetConnected, setSheetConnected] = useState(false);
@@ -656,18 +656,18 @@
         setUnassignTarget(null);
       }, [unassignTarget]);
 
-      const filtered = useMemo(() => patients.filter(p => {
+      // patients matching department + search (before the status filter), used for the counts
+      const baseList = useMemo(() => patients.filter(p => {
         const dm = dept === "All" || p.department === dept;
-        const sm = statusFilters.has(p.status);
-        const qm = !search || `${p.firstName} ${p.lastName} ${p.complaint} ${p.diagnosis}`.toLowerCase().includes(search.toLowerCase());
-        return dm && sm && qm;
-      }), [patients, dept, search, statusFilters]);
-
-      const toggleSF = (s) => setStatusFilters(prev => {
-        const n = new Set(prev);
-        if (n.has(s)) { if (n.size > 1) n.delete(s); } else n.add(s);
-        return n;
-      });
+        const qm = !search || `${p.firstName} ${p.lastName} ${p.complaint} ${p.diagnosis} ${p.assignedTo||""}`.toLowerCase().includes(search.toLowerCase());
+        return dm && qm;
+      }), [patients, dept, search]);
+      const filtered = useMemo(() => baseList.filter(p => statusFilter === "all" || p.status === statusFilter), [baseList, statusFilter]);
+      const statusCounts = {
+        all: baseList.length,
+        assigned: baseList.filter(p => p.status === "assigned").length,
+        unassigned: baseList.filter(p => p.status === "unassigned").length,
+      };
       const unassignPatient = patients.find(p => p.id === unassignTarget);
 
       return (
@@ -717,12 +717,18 @@
               <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search patients, complaints, diagnoses…" className="search-in"
                 style={{width:"100%",padding:"10px 14px 10px 38px",borderRadius:12,border:"1.5px solid rgba(43,188,212,0.2)",background:"rgba(255,255,255,0.8)",color:"#0a2030",fontSize:13,fontFamily:"inherit",transition:"all 0.2s"}}/>
             </div>
-            <div style={{display:"flex",gap:6}}>
-              {["assigned","unassigned"].map(s=>(
-                <button key={s} onClick={()=>toggleSF(s)} style={{padding:"7px 13px",borderRadius:10,border:`1.5px solid ${statusFilters.has(s)?s==="assigned"?"rgba(43,188,212,0.38)":"rgba(176,122,0,0.38)":"rgba(43,188,212,0.12)"}`,background:statusFilters.has(s)?s==="assigned"?"rgba(43,188,212,0.08)":"rgba(176,122,0,0.07)":"transparent",color:statusFilters.has(s)?s==="assigned"?"#0e9ab5":"#b07a00":"rgba(10,32,48,0.3)",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.8px",textTransform:"uppercase",transition:"all 0.2s"}}>
-                  {s==="assigned" ? "✓ Assigned" : "◌ Unassigned"}
-                </button>
-              ))}
+            {/* STATUS FILTER: All / Assigned / Unassigned */}
+            <div role="group" aria-label="Filter by assignment status" className="status-seg" style={{display:"flex",gap:3,padding:3,borderRadius:12,background:"rgba(43,188,212,0.07)",border:"1.5px solid rgba(43,188,212,0.16)"}}>
+              {[["all","All","#0a2030"],["assigned","✓ Assigned","#0e9ab5"],["unassigned","◌ Unassigned","#b07a00"]].map(([key,label,color])=>{
+                const active = statusFilter === key;
+                return (
+                  <button key={key} onClick={()=>setStatusFilter(key)} aria-pressed={active}
+                    style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,padding:"7px 12px",borderRadius:9,border:"none",background:active?"#fff":"transparent",boxShadow:active?"0 2px 8px rgba(43,188,212,0.18)":"none",color:active?color:"rgba(10,32,48,0.42)",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",letterSpacing:"0.6px",textTransform:"uppercase",whiteSpace:"nowrap",transition:"all 0.2s"}}>
+                    {label}
+                    <span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:8,background:active?"rgba(43,188,212,0.1)":"rgba(10,32,48,0.05)",color:active?color:"rgba(10,32,48,0.38)"}}>{statusCounts[key]}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
