@@ -29,6 +29,53 @@
       0%,100% { opacity: 0.4; }
       50%      { opacity: 1; }
     }
+    /* ── PHONE LAYOUT ─────────────────────────────────────────────────────── */
+    @media (hover: none) {
+      .p-card { transform: none !important; }           /* no "stuck" hover lift after a tap */
+    }
+    @media (max-width: 640px) {
+      html, body { overflow-x: hidden; }
+      .pad-x { padding-left: 14px !important; padding-right: 14px !important; }
+      header.pad-x { height: 60px !important; }
+      header.pad-x > div:last-child { padding: 5px 10px !important; font-size: 11px !important; }
+
+      /* search + filters */
+      .controls { padding-top: 12px !important; padding-bottom: 12px !important; }
+      .controls > div:first-child { flex-basis: 100% !important; min-width: 0 !important; }
+      .controls > div:last-child { width: 100%; }
+      .controls > div:last-child > button { flex: 1; padding: 10px 8px !important; }
+      .search-in { font-size: 16px !important; }        /* stops iPhone auto-zoom */
+
+      /* department tabs scroll sideways instead of wrapping */
+      .dept-tabs { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+      .dept-tabs::-webkit-scrollbar { display: none; }
+      .dept-tabs > button { flex-shrink: 0; white-space: nowrap; padding: 9px 13px !important; }
+
+      /* stats */
+      .stats { gap: 14px !important; flex-wrap: wrap; }
+      .stats > div > span:first-child { font-size: 20px !important; }
+
+      /* patient cards: one per row */
+      .p-grid { grid-template-columns: 1fr !important; gap: 14px !important; padding-top: 14px !important; }
+      .p-card { border-radius: 20px !important; }
+      .p-body { padding: 16px !important; }
+      .p-foot { padding: 10px 16px !important; }
+      .p-body > div:first-child { flex-wrap: wrap; }
+
+      /* small popups (assign / unassign / reassign) */
+      .m-overlay { padding: 14px !important; align-items: center !important; }
+      .m-box { padding: 28px 20px !important; border-radius: 22px !important; }
+      .m-box input { font-size: 16px !important; }
+
+      /* full patient record: slides up as a bottom sheet */
+      .m-overlay:has(.d-box) { padding: 0 !important; align-items: flex-end !important; }
+      .d-box { max-height: 92vh !important; border-radius: 22px 22px 0 0 !important; }
+      .d-head { padding: 20px 18px 18px !important; border-radius: 22px 22px 0 0 !important; }
+      .d-body { padding: 20px 18px 32px !important; }
+      .d-img { width: calc(50% - 6px) !important; height: auto !important; aspect-ratio: 1; }
+
+      .lb-close { top: 14px !important; right: 14px !important; }
+    }
     @keyframes popIn {
       0%   { transform: scale(0.85); opacity: 0; }
       70%  { transform: scale(1.06); }
@@ -122,19 +169,39 @@
       if (url.includes("jotform.com")) return "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
       return url;
     }
+    /* Short, Firebase-safe hash so each patient keeps the same ID
+       no matter where their row sits in the sheet. */
+    function hashStr(s) {
+      let h = 5381;
+      for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+      return (h >>> 0).toString(36).toUpperCase();
+    }
     function csvToPatients(rows) {
       const headers = rows[0].map(h => h.toLowerCase().trim());
       const get = (row, ...keys) => {
         for (const k of keys) { const i = headers.findIndex(h => h.includes(k)); if (i !== -1 && row[i]) return row[i].trim(); }
         return "";
       };
+      const seen = {};
       return rows.slice(1).filter(r => r.some(c => c)).map((row, i) => {
         const images = [];
         headers.forEach((h, idx) => {
           const isImg = h.includes("image")||h.includes("photo")||h.includes("xray")||h.includes("x-ray")||h.includes("picture")||h.includes("upload")||h.includes("radiograph")||h.includes("intraoral")||h.includes("clinical");
           if (isImg && row[idx]) extractImageUrls(row[idx]).forEach(url => images.push(proxyImg(url)));
         });
-        return { id:`PT-${String(i+1).padStart(3,"0")}`, firstName:get(row,"first name","first")||"Patient", lastName:get(row,"last name","last")||String(i+1), age:get(row,"age"), phone:get(row,"phone","number","mobile","tel"), complaint:get(row,"complaint","problem","chief","summary"), diagnosis:get(row,"diagnosis","diag","preliminary"), department:get(row,"department","dept","section")||"Operative", status:"unassigned", assignedTo:"", images };
+        const rawFirst = get(row,"first name","first");
+        const rawLast  = get(row,"last name","last");
+        const phone    = get(row,"phone","number","mobile","tel");
+        // Stable ID: built from the form's submission ID or timestamp + name + phone,
+        // never from the row number, so deleting/sorting rows can't shift assignments.
+        const subId = get(row,"submission id");
+        const stamp = get(row,"timestamp","submission date","submitted","date");
+        const basis = subId || [stamp, rawFirst, rawLast, phone].join("|");
+        let id = "P-" + hashStr(basis);
+        seen[id] = (seen[id] || 0) + 1;
+        if (seen[id] > 1) id += "-" + seen[id];   // identical duplicate rows
+        const rowNo = `PT-${String(i+1).padStart(3,"0")}`;
+        return { id, num:rowNo, legacyId:rowNo, firstName:rawFirst||"Patient", lastName:rawLast||String(i+1), age:get(row,"age"), phone, complaint:get(row,"complaint","problem","chief","summary"), diagnosis:get(row,"diagnosis","diag","preliminary"), department:get(row,"department","dept","section")||"Operative", status:"unassigned", assignedTo:"", images };
       });
     }
 
@@ -209,7 +276,7 @@
       }, []);
       return (
         <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,20,35,0.88)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16,backdropFilter:"blur(16px)"}}>
-          <button onClick={onClose} style={{position:"absolute",top:24,right:32,background:"rgba(43,188,212,0.15)",border:"1px solid rgba(43,188,212,0.3)",color:"#2bbcd4",fontSize:20,cursor:"pointer",width:42,height:42,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+          <button onClick={onClose} className="lb-close" style={{position:"absolute",top:24,right:32,background:"rgba(43,188,212,0.15)",border:"1px solid rgba(43,188,212,0.3)",color:"#2bbcd4",fontSize:20,cursor:"pointer",width:42,height:42,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
           <ImgWithFallback src={src} fullSize={true} style={{maxWidth:"88vw",maxHeight:"78vh",borderRadius:16,boxShadow:"0 0 60px rgba(43,188,212,0.18),0 0 0 1px rgba(43,188,212,0.2)"}} />
           <span style={{fontSize:11,color:"rgba(255,255,255,0.35)",letterSpacing:"2px",textTransform:"uppercase"}}>Click anywhere to close</span>
         </div>
@@ -229,8 +296,8 @@
       }, []);
       const confirm = () => { if (!name.trim()) { setErr(true); return; } onConfirm(name.trim()); };
       return (
-        <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,background:"rgba(0,20,35,0.45)",zIndex:700,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(16px)"}}>
-          <div style={{background:"#fff",borderRadius:28,padding:"38px 36px",width:420,boxShadow:"0 32px 80px rgba(43,188,212,0.18),0 0 0 1px rgba(43,188,212,0.14)",animation:"popIn 0.3s ease both"}}>
+        <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} className="m-overlay" style={{position:"fixed",inset:0,background:"rgba(0,20,35,0.45)",zIndex:700,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(16px)"}}>
+          <div className="m-box" style={{background:"#fff",borderRadius:28,padding:"38px 36px",width:"100%",maxWidth:420,boxShadow:"0 32px 80px rgba(43,188,212,0.18),0 0 0 1px rgba(43,188,212,0.14)",animation:"popIn 0.3s ease both"}}>
             <div style={{width:52,height:52,borderRadius:16,background:"linear-gradient(135deg,#2bbcd4,#1a8fa8)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,marginBottom:14,boxShadow:"0 8px 24px rgba(43,188,212,0.32)"}}>🎓</div>
             <div style={{fontSize:24,fontWeight:800,color:"#0a2030",marginBottom:6}}>Assign Student</div>
             <div style={{fontSize:13,color:"rgba(10,32,48,0.48)",marginBottom:26,lineHeight:1.6}}>Enter the student name to assign this patient.<br/><span style={{color:"#0e9ab5",fontWeight:600}}>Any user can assign or unassign freely.</span></div>
@@ -253,8 +320,8 @@
         return () => document.removeEventListener("keydown", h);
       }, []);
       return (
-        <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,background:"rgba(0,20,35,0.45)",zIndex:700,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(16px)"}}>
-          <div style={{background:"#fff",borderRadius:28,padding:"38px 36px",width:420,boxShadow:"0 32px 80px rgba(200,50,50,0.12),0 0 0 1px rgba(200,80,80,0.1)",animation:"popIn 0.3s ease both"}}>
+        <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} className="m-overlay" style={{position:"fixed",inset:0,background:"rgba(0,20,35,0.45)",zIndex:700,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(16px)"}}>
+          <div className="m-box" style={{background:"#fff",borderRadius:28,padding:"38px 36px",width:"100%",maxWidth:420,boxShadow:"0 32px 80px rgba(200,50,50,0.12),0 0 0 1px rgba(200,80,80,0.1)",animation:"popIn 0.3s ease both"}}>
             <div style={{width:52,height:52,borderRadius:16,background:"rgba(200,50,50,0.07)",border:"1.5px solid rgba(200,50,50,0.18)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,marginBottom:14}}>⚠️</div>
             <div style={{fontSize:24,fontWeight:800,color:"#0a2030",marginBottom:6}}>Unassign Patient?</div>
             <div style={{fontSize:13,color:"rgba(10,32,48,0.48)",marginBottom:8,lineHeight:1.6}}>Removing assignment for</div>
@@ -271,6 +338,36 @@
       );
     }
 
+    /* ── REASSIGN MODAL (patient was already taken by someone else) ─────────── */
+    function ReassignModal({ patient, currentName, newName, onConfirm, onClose }) {
+      useEffect(() => {
+        const h = e => { if (e.key === "Escape") onClose(); };
+        document.addEventListener("keydown", h);
+        return () => document.removeEventListener("keydown", h);
+      }, []);
+      return (
+        <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} className="m-overlay" style={{position:"fixed",inset:0,background:"rgba(0,20,35,0.45)",zIndex:800,display:"flex",alignItems:"center",justifyContent:"center",backdropFilter:"blur(16px)",padding:16}}>
+          <div className="m-box" style={{background:"#fff",borderRadius:28,padding:"38px 36px",width:"100%",maxWidth:420,boxShadow:"0 32px 80px rgba(176,122,0,0.14),0 0 0 1px rgba(176,122,0,0.14)",animation:"popIn 0.3s ease both"}}>
+            <div style={{width:52,height:52,borderRadius:16,background:"rgba(176,122,0,0.08)",border:"1.5px solid rgba(176,122,0,0.22)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,marginBottom:14}}>⚠️</div>
+            <div style={{fontSize:22,fontWeight:800,color:"#0a2030",marginBottom:10,lineHeight:1.3}}>Patient has already been assigned, are you sure you want to reassign them?</div>
+            {patient && <div style={{fontSize:15,fontWeight:700,color:"#0a2030",marginBottom:14}}>{patient.firstName} {patient.lastName}</div>}
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:24}}>
+              <div style={{fontSize:13,padding:"8px 14px",borderRadius:10,background:"rgba(176,122,0,0.06)",border:"1px solid rgba(176,122,0,0.2)",display:"flex",alignItems:"center",gap:6}}>
+                <span>🎓</span><span style={{color:"rgba(10,32,48,0.5)"}}>Currently assigned to:</span><strong style={{color:"#b07a00"}}>{currentName}</strong>
+              </div>
+              <div style={{fontSize:13,padding:"8px 14px",borderRadius:10,background:"rgba(43,188,212,0.06)",border:"1px solid rgba(43,188,212,0.18)",display:"flex",alignItems:"center",gap:6}}>
+                <span>➡️</span><span style={{color:"rgba(10,32,48,0.5)"}}>Reassign to:</span><strong style={{color:"#0e9ab5"}}>{newName}</strong>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={onClose} style={{flex:1,padding:13,borderRadius:12,background:"#f0fbfd",border:"1.5px solid rgba(43,188,212,0.22)",color:"#0e9ab5",fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+              <button onClick={onConfirm} style={{flex:1,padding:13,borderRadius:12,background:"rgba(176,122,0,0.1)",border:"1.5px solid rgba(176,122,0,0.3)",color:"#b07a00",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Yes, reassign</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     /* ── PATIENT CARD ───────────────────────────────────────────────────────── */
     function PatientCard({ patient, onAssign, onUnassign, onOpenDetail, index }) {
       const meta = DEPT_META[patient.department] || DEPT_META["Operative"];
@@ -278,16 +375,16 @@
       const [lightbox, setLightbox] = useState(null);
       return (
         <>
-          <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} onClick={()=>onOpenDetail(patient)}
+          <div onMouseEnter={()=>setHov(true)} onMouseLeave={()=>setHov(false)} onClick={()=>onOpenDetail(patient)} className="p-card"
             style={{background:hov?"#fff":"rgba(255,255,255,0.85)",borderRadius:24,border:`1.5px solid ${hov?meta.color:meta.border}`,overflow:"hidden",cursor:"pointer",transform:hov?"translateY(-8px) scale(1.01)":"translateY(0) scale(1)",transition:"all 0.4s cubic-bezier(0.34,1.56,0.64,1)",boxShadow:hov?`0 24px 60px rgba(43,188,212,0.16),0 0 0 1.5px ${meta.color}33`:"0 4px 20px rgba(43,188,212,0.08)",animation:"slideUp 0.5s ease both",animationDelay:`${index*0.06}s`}}>
             <div style={{height:4,background:`linear-gradient(90deg,${meta.color},rgba(43,188,212,0.25),transparent)`}}/>
-            <div style={{padding:"20px 22px"}}>
+            <div className="p-body" style={{padding:"20px 22px"}}>
               <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:14,gap:8}}>
                 <div style={{display:"flex",alignItems:"center",gap:12}}>
                   <DeptIcon dept={patient.department} size={44}/>
                   <div>
                     <div style={{fontSize:17,fontWeight:700,color:"#0a2030",letterSpacing:"-0.3px",lineHeight:1.2}}>{patient.firstName} {patient.lastName}</div>
-                    <div style={{fontSize:11,color:"rgba(10,32,48,0.32)",marginTop:2,letterSpacing:"1px"}}>{patient.id}</div>
+                    <div style={{fontSize:11,color:"rgba(10,32,48,0.32)",marginTop:2,letterSpacing:"1px"}}>{patient.num || patient.id}</div>
                   </div>
                 </div>
                 <div onClick={e=>e.stopPropagation()}>
@@ -319,7 +416,7 @@
                 : <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:10,background:"rgba(43,188,212,0.03)",border:"1px dashed rgba(43,188,212,0.18)"}}><span style={{fontSize:16,opacity:0.3}}>📷</span><span style={{fontSize:11,color:"rgba(10,32,48,0.28)"}}>No images uploaded</span></div>
               }
             </div>
-            <div style={{padding:"10px 22px",borderTop:"1px solid rgba(43,188,212,0.1)",display:"flex",justifyContent:"flex-end"}}>
+            <div className="p-foot" style={{padding:"10px 22px",borderTop:"1px solid rgba(43,188,212,0.1)",display:"flex",justifyContent:"flex-end"}}>
               <span style={{fontSize:11,color:meta.color,fontWeight:600,opacity:hov?1:0.35,transition:"opacity 0.2s"}}>View Full Record →</span>
             </div>
           </div>
@@ -339,15 +436,15 @@
       }, []);
       return (
         <>
-          <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} style={{position:"fixed",inset:0,background:"rgba(0,20,35,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:24,backdropFilter:"blur(12px)"}}>
-            <div style={{background:"#fff",borderRadius:28,width:"100%",maxWidth:680,maxHeight:"88vh",overflowY:"auto",boxShadow:`0 32px 100px rgba(43,188,212,0.18),0 0 0 1.5px ${meta.color}33`,animation:"popIn 0.3s ease both"}}>
-              <div style={{background:`linear-gradient(135deg,#f5feff 0%,${meta.light} 100%)`,padding:"28px 32px 24px",borderBottom:`1px solid ${meta.border}`,position:"sticky",top:0,backdropFilter:"blur(20px)",borderRadius:"28px 28px 0 0",zIndex:10}}>
+          <div onClick={e=>{if(e.target===e.currentTarget)onClose();}} className="m-overlay" style={{position:"fixed",inset:0,background:"rgba(0,20,35,0.45)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:24,backdropFilter:"blur(12px)"}}>
+            <div className="d-box" style={{background:"#fff",borderRadius:28,width:"100%",maxWidth:680,maxHeight:"88vh",overflowY:"auto",boxShadow:`0 32px 100px rgba(43,188,212,0.18),0 0 0 1.5px ${meta.color}33`,animation:"popIn 0.3s ease both"}}>
+              <div className="d-head" style={{background:`linear-gradient(135deg,#f5feff 0%,${meta.light} 100%)`,padding:"28px 32px 24px",borderBottom:`1px solid ${meta.border}`,position:"sticky",top:0,backdropFilter:"blur(20px)",borderRadius:"28px 28px 0 0",zIndex:10}}>
                 <button onClick={onClose} style={{position:"absolute",top:20,right:24,background:"rgba(43,188,212,0.09)",border:"1px solid rgba(43,188,212,0.2)",color:"#0e9ab5",fontSize:14,cursor:"pointer",width:32,height:32,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
                 <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:16}}>
                   <DeptIcon dept={patient.department} size={52}/>
                   <div>
                     <div style={{fontSize:24,fontWeight:800,color:"#0a2030",letterSpacing:"-0.5px"}}>{patient.firstName} {patient.lastName}</div>
-                    <div style={{fontSize:11,color:"rgba(10,32,48,0.32)",letterSpacing:"1.5px",marginTop:3}}>{patient.id} · {patient.department.toUpperCase()}</div>
+                    <div style={{fontSize:11,color:"rgba(10,32,48,0.32)",letterSpacing:"1.5px",marginTop:3}}>{patient.num || patient.id} · {patient.department.toUpperCase()}</div>
                   </div>
                 </div>
                 <StatusButton patient={patient} onAssign={()=>onAssign(patient.id)} onUnassign={()=>onUnassign(patient.id)}/>
@@ -357,7 +454,7 @@
                   </div>
                 )}
               </div>
-              <div style={{padding:"28px 32px"}}>
+              <div className="d-body" style={{padding:"28px 32px"}}>
                 <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:26}}>
                   {[["🎂","Age",patient.age],["📞","Phone",patient.phone],["🏥","Dept",patient.department]].filter(c=>c[2]).map(([icon,label,val],i)=>(
                     <div key={i} style={{padding:"10px 16px",borderRadius:14,background:"rgba(43,188,212,0.05)",border:"1px solid rgba(43,188,212,0.14)"}}>
@@ -378,7 +475,7 @@
                     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
                       {patient.images.map((img,i)=>(
                         <img key={i} src={img} alt="xray" onClick={()=>setLightbox(img)}
-                          style={{width:150,height:150,borderRadius:14,objectFit:"cover",cursor:"pointer",border:"2px solid rgba(43,188,212,0.18)",transition:"all 0.3s"}}
+                          className="d-img" style={{width:150,height:150,borderRadius:14,objectFit:"cover",cursor:"pointer",border:"2px solid rgba(43,188,212,0.18)",transition:"all 0.3s"}}
                           onMouseEnter={e=>{e.target.style.transform="scale(1.05)";e.target.style.borderColor=meta.color;}}
                           onMouseLeave={e=>{e.target.style.transform="scale(1)";e.target.style.borderColor="rgba(43,188,212,0.18)";}}/>
                       ))}
@@ -411,6 +508,16 @@
       const syncRef = useRef(null);
       const fbRef = useRef(null);
       const assignmentsRef = useRef({});
+      const migratedRef = useRef(false);
+      const [reassignInfo, setReassignInfo] = useState(null); // { id, currentName, newName }
+
+      /* ── apply an assignment locally (and optionally save to Firebase) ─── */
+      const applyAssignment = (id, data, save) => {
+        assignmentsRef.current[id] = data;
+        setPatients(prev => prev.map(p => p.id === id ? { ...p, ...data } : p));
+        setDetailPatient(prev => prev?.id === id ? { ...prev, ...data } : prev);
+        if (save) pushAssignment(id, data);
+      };
 
       /* ── FIREBASE: write one assignment ─────────────────────────────────── */
       const pushAssignment = async (id, data) => {
@@ -438,6 +545,32 @@
         } catch(e) { console.error("Firebase read error:", e); }
       }, []);
 
+      /* ── ONE-TIME MIGRATION: copy old row-number assignments (PT-001…) to the
+            new stable IDs. Runs once ever, guarded by /meta/stableIds in Firebase. */
+      const migrateLegacy = async (fresh) => {
+        if (!FB_READY || migratedRef.current) return;
+        migratedRef.current = true;
+        try {
+          const flag = await (await fetch(`${FIREBASE_URL}/meta/stableIds.json`)).json();
+          if (flag) return;
+          const all = (await (await fetch(`${FIREBASE_URL}/assignments.json`)).json()) || {};
+          const updates = {};
+          fresh.forEach(p => {
+            const old = all[p.legacyId];
+            if (old && old.status === "assigned" && !all[p.id]) updates[p.id] = old;
+          });
+          if (Object.keys(updates).length) {
+            await fetch(`${FIREBASE_URL}/assignments.json`, {
+              method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updates)
+            });
+          }
+          await fetch(`${FIREBASE_URL}/meta/stableIds.json`, {
+            method: "PUT", headers: { "Content-Type": "application/json" }, body: "true"
+          });
+          fetchAssignments();
+        } catch(e) { migratedRef.current = false; console.error("Migration error:", e); }
+      };
+
       /* ── SHEET: fetch and merge with stored Firebase assignments ─────────── */
       const fetchSheet = useCallback(async (url) => {
         try {
@@ -450,6 +583,7 @@
             const merged = fresh.map(p => assignmentsRef.current[p.id] ? { ...p, ...assignmentsRef.current[p.id] } : p);
             setPatients(merged);
             setSyncTime(new Date()); setSheetConnected(true);
+            migrateLegacy(fresh);
           } else { setSyncError(true); }
         } catch(e) { console.error(e); setSyncError(true); } finally { setSyncing(false); }
       }, []);
@@ -472,14 +606,33 @@
       }, []);
 
       const handleAssign = useCallback((id) => setAssignTarget(id), []);
-      const confirmAssign = useCallback((studentName) => {
-        const data = { status: "assigned", assignedTo: studentName };
-        assignmentsRef.current[assignTarget] = data;
-        setPatients(prev => prev.map(p => p.id === assignTarget ? { ...p, ...data } : p));
-        setDetailPatient(prev => prev?.id === assignTarget ? { ...prev, ...data } : prev);
-        pushAssignment(assignTarget, data);
+      const confirmAssign = useCallback(async (studentName) => {
+        const id = assignTarget;
         setAssignTarget(null);
+        // Check Firebase right now (not the 5-second-old copy) in case
+        // someone else assigned this patient a moment ago.
+        let current = null;
+        if (FB_READY) {
+          try {
+            const res = await fetch(`${FIREBASE_URL}/assignments/${id}.json?t=` + Date.now());
+            current = await res.json();
+          } catch(e) { console.error("Firebase check error:", e); }
+        }
+        const takenBySomeoneElse = current && current.status === "assigned" && current.assignedTo &&
+          current.assignedTo.trim().toLowerCase() !== studentName.trim().toLowerCase();
+        if (takenBySomeoneElse) {
+          applyAssignment(id, current, false);   // show the real current owner
+          setReassignInfo({ id, currentName: current.assignedTo, newName: studentName });
+          return;
+        }
+        applyAssignment(id, { status: "assigned", assignedTo: studentName }, true);
       }, [assignTarget]);
+
+      const confirmReassign = () => {
+        if (!reassignInfo) return;
+        applyAssignment(reassignInfo.id, { status: "assigned", assignedTo: reassignInfo.newName }, true);
+        setReassignInfo(null);
+      };
 
       const handleUnassign = useCallback((id) => setUnassignTarget(id), []);
       const confirmUnassign = useCallback(() => {
@@ -510,7 +663,7 @@
           <FloatingParticles/>
 
           {/* HEADER */}
-          <header style={{background:"rgba(255,255,255,0.92)",backdropFilter:"blur(24px)",borderBottom:"1px solid rgba(43,188,212,0.18)",padding:"0 32px",height:68,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 20px rgba(43,188,212,0.09)"}}>
+          <header className="pad-x" style={{background:"rgba(255,255,255,0.92)",backdropFilter:"blur(24px)",borderBottom:"1px solid rgba(43,188,212,0.18)",padding:"0 32px",height:68,display:"flex",alignItems:"center",justifyContent:"space-between",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 20px rgba(43,188,212,0.09)"}}>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
               <div style={{width:44,height:44,borderRadius:13,background:"linear-gradient(135deg,#e0f7fa,#b2ebf2)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 16px rgba(43,188,212,0.22)",border:"1.5px solid rgba(43,188,212,0.22)",fontSize:22}}>🦷</div>
               <div>
@@ -528,7 +681,7 @@
 
           {/* SHEET BANNER */}
           {bannerVisible && (
-            <div style={{background:sheetConnected?"rgba(43,188,212,0.05)":syncError?"rgba(200,50,50,0.04)":"rgba(176,122,0,0.05)",borderBottom:`1px solid ${sheetConnected?"rgba(43,188,212,0.14)":syncError?"rgba(200,50,50,0.15)":"rgba(176,122,0,0.12)"}`,padding:"11px 32px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <div style={{background:sheetConnected?"rgba(43,188,212,0.05)":syncError?"rgba(200,50,50,0.04)":"rgba(176,122,0,0.05)",borderBottom:`1px solid ${sheetConnected?"rgba(43,188,212,0.14)":syncError?"rgba(200,50,50,0.15)":"rgba(176,122,0,0.12)"}`,padding:"11px 32px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}} className="pad-x">
               <span>{sheetConnected ? "✅" : syncError ? "❌" : "📋"}</span>
               {sheetConnected
                 ? <span style={{fontSize:13,color:"#0e9ab5",fontWeight:600}}>Sheet connected — syncing every 30s</span>
@@ -546,10 +699,10 @@
           )}
 
           {/* CONTROLS */}
-          <div style={{padding:"14px 32px",borderBottom:"1px solid rgba(43,188,212,0.1)",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"rgba(255,255,255,0.5)"}}>
+          <div className="pad-x controls" style={{padding:"14px 32px",borderBottom:"1px solid rgba(43,188,212,0.1)",display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",background:"rgba(255,255,255,0.5)"}}>
             <div style={{position:"relative",flex:1,minWidth:200}}>
               <span style={{position:"absolute",left:13,top:"50%",transform:"translateY(-50%)",opacity:0.28,fontSize:13}}>🔍</span>
-              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search patients, complaints, diagnoses…"
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search patients, complaints, diagnoses…" className="search-in"
                 style={{width:"100%",padding:"10px 14px 10px 38px",borderRadius:12,border:"1.5px solid rgba(43,188,212,0.2)",background:"rgba(255,255,255,0.8)",color:"#0a2030",fontSize:13,fontFamily:"inherit",transition:"all 0.2s"}}/>
             </div>
             <div style={{display:"flex",gap:6}}>
@@ -562,7 +715,7 @@
           </div>
 
           {/* DEPT TABS */}
-          <div style={{padding:"14px 32px 0",display:"flex",gap:6,flexWrap:"wrap",borderBottom:"1px solid rgba(43,188,212,0.1)",background:"rgba(255,255,255,0.4)"}}>
+          <div className="pad-x dept-tabs" style={{padding:"14px 32px 0",display:"flex",gap:6,flexWrap:"wrap",borderBottom:"1px solid rgba(43,188,212,0.1)",background:"rgba(255,255,255,0.4)"}}>
             {ALL_DEPTS.map(d => {
               const meta = DEPT_META[d]; const active = dept === d;
               return (
@@ -574,7 +727,7 @@
           </div>
 
           {/* STATS */}
-          <div style={{padding:"12px 32px",display:"flex",gap:24,alignItems:"center",background:"rgba(255,255,255,0.3)",borderBottom:"1px solid rgba(43,188,212,0.07)"}}>
+          <div className="pad-x stats" style={{padding:"12px 32px",display:"flex",gap:24,alignItems:"center",background:"rgba(255,255,255,0.3)",borderBottom:"1px solid rgba(43,188,212,0.07)"}}>
             {[["Total",patients.length,"#0a2030"],["Assigned",patients.filter(p=>p.status==="assigned").length,"#0e9ab5"],["Unassigned",patients.filter(p=>p.status==="unassigned").length,"#b07a00"],["Showing",filtered.length,"#3a6fd8"]].map(([label,num,color])=>(
               <div key={label} style={{display:"flex",alignItems:"baseline",gap:5}}>
                 <span style={{fontSize:24,fontWeight:800,color,letterSpacing:"-1px"}}>{num}</span>
@@ -584,7 +737,7 @@
           </div>
 
           {/* GRID */}
-          <div style={{padding:"20px 32px 60px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:18}}>
+          <div className="pad-x p-grid" style={{padding:"20px 32px 60px",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:18}}>
             {filtered.length === 0
               ? <div style={{gridColumn:"1/-1",textAlign:"center",padding:"80px 0",color:"rgba(10,32,48,0.22)"}}>
                   <div style={{fontSize:44,marginBottom:12}}>🦷</div>
@@ -601,6 +754,7 @@
 
           {detailPatient && <DetailModal patient={patients.find(p=>p.id===detailPatient.id)||detailPatient} onAssign={handleAssign} onUnassign={handleUnassign} onClose={()=>setDetailPatient(null)}/>}
           {assignTarget && <AssignModal onConfirm={confirmAssign} onClose={()=>setAssignTarget(null)}/>}
+          {reassignInfo && <ReassignModal patient={patients.find(p=>p.id===reassignInfo.id)} currentName={reassignInfo.currentName} newName={reassignInfo.newName} onConfirm={confirmReassign} onClose={()=>setReassignInfo(null)}/>}
           {unassignTarget && unassignPatient && <UnassignModal patient={unassignPatient} onConfirm={confirmUnassign} onClose={()=>setUnassignTarget(null)}/>}
         </div>
       );
