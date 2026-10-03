@@ -148,25 +148,38 @@
     const FB_READY = FIREBASE_URL && !FIREBASE_URL.includes("YOUR_FIREBASE");
 
     /* ── HELPERS ────────────────────────────────────────────────────────────── */
+    /* Proper CSV parser: handles cells that contain line breaks (e.g. several
+       uploaded image links in one cell) and "" escaped quotes. */
     function parseCSV(text) {
-      return text.trim().split("\n").map(row => {
-        const cols = []; let cur = ""; let inQ = false;
-        for (const c of row) {
-          if (c === '"') inQ = !inQ;
-          else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ""; }
+      const rows = []; let row = []; let cur = ""; let inQ = false;
+      text = text.replace(/\r\n?/g, "\n");
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (inQ) {
+          if (c === '"' && text[i+1] === '"') { cur += '"'; i++; }
+          else if (c === '"') inQ = false;
           else cur += c;
-        }
-        cols.push(cur.trim());
-        return cols;
-      });
+        } else if (c === '"') inQ = true;
+        else if (c === ',') { row.push(cur.trim()); cur = ""; }
+        else if (c === '\n') { row.push(cur.trim()); rows.push(row); row = []; cur = ""; }
+        else cur += c;
+      }
+      row.push(cur.trim()); rows.push(row);
+      return rows.filter(r => r.some(c => c));
     }
     function extractImageUrls(raw) {
       if (!raw) return [];
-      return raw.split(/[\n,]+/).map(s => s.trim()).filter(s => s.startsWith("http"));
+      return raw.split(/[\n,\s]+/).map(s => s.trim()).filter(s => s.startsWith("http"));
     }
+    /* Turn a sheet link into something an <img> can display. */
     function proxyImg(url) {
       if (!url) return url;
-      if (url.includes("jotform.com")) return "https://api.allorigins.win/raw?url=" + encodeURIComponent(url);
+      // Google Drive (Google Forms uploads): open?id=… / file/d/…/view aren't images —
+      // use Drive's thumbnail endpoint instead. The file must be shared "Anyone with the link".
+      const drive = url.match(/drive\.google\.com\/(?:open\?id=|file\/d\/|uc\?(?:export=\w+&)?id=)([\w-]+)/);
+      if (drive) return `https://drive.google.com/thumbnail?id=${drive[1]}&sz=w1600`;
+      // JotForm: load directly (the old allorigins proxy was unreliable and sent
+      // patient images through a third-party server).
       return url;
     }
     /* Short, Firebase-safe hash so each patient keeps the same ID
@@ -252,7 +265,7 @@
           {fullSize && <span>Image unavailable</span>}
         </div>
       );
-      return <img src={src} alt="xray" style={style} onError={() => setErr(true)} />;
+      return <img src={src} alt="xray" referrerPolicy="no-referrer" style={style} onError={() => setErr(true)} />;
     }
 
     /* ── XRAY THUMB ─────────────────────────────────────────────────────────── */
@@ -474,10 +487,9 @@
                     <div style={{fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"rgba(10,32,48,0.28)",marginBottom:12,paddingBottom:6,borderBottom:"1px solid rgba(43,188,212,0.1)"}}>Radiographs / Images</div>
                     <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
                       {patient.images.map((img,i)=>(
-                        <img key={i} src={img} alt="xray" onClick={()=>setLightbox(img)}
-                          className="d-img" style={{width:150,height:150,borderRadius:14,objectFit:"cover",cursor:"pointer",border:"2px solid rgba(43,188,212,0.18)",transition:"all 0.3s"}}
-                          onMouseEnter={e=>{e.target.style.transform="scale(1.05)";e.target.style.borderColor=meta.color;}}
-                          onMouseLeave={e=>{e.target.style.transform="scale(1)";e.target.style.borderColor="rgba(43,188,212,0.18)";}}/>
+                        <div key={i} onClick={()=>setLightbox(img)} className="d-img" style={{width:150,height:150,borderRadius:14,overflow:"hidden",cursor:"pointer",border:"2px solid rgba(43,188,212,0.18)",background:"#e8f8fb"}}>
+                          <ImgWithFallback src={img} fullSize={true} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                        </div>
                       ))}
                     </div>
                   </div>
